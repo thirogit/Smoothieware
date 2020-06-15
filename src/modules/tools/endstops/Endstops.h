@@ -23,6 +23,7 @@ class Endstops : public Module{
         Endstops();
         void on_module_loaded();
         void on_gcode_received(void* argument);
+		void on_console_line_received( void *argument );
 
     private:
         bool load_old_config();

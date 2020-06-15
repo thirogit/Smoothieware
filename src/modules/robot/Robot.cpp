@@ -42,6 +42,8 @@
 #include <string>
 #include <algorithm>
 
+#include "SerialConsole.h"
+
 #define  default_seek_rate_checksum          CHECKSUM("default_seek_rate")
 #define  default_feed_rate_checksum          CHECKSUM("default_feed_rate")
 #define  mm_per_line_segment_checksum        CHECKSUM("mm_per_line_segment")
@@ -102,6 +104,9 @@
 
 // The Robot converts GCodes into actual movements, and then adds them to the Planner, which passes them to the Conveyor so they can be added to the queue
 // It takes care of cutting arcs into segments, same thing for line that are too long
+//#define DEBUG_PRINTF THEKERNEL->serial->printf
+#define DEBUG_PRINTF(...)
+
 
 Robot::Robot()
 {
@@ -607,6 +612,9 @@ void Robot::on_gcode_received(void *argument)
                     int selected_extruder= get_active_extruder();
                     if(selected_extruder > 0) {
                         float e= gcode->has_letter('E') ? gcode->get_value('E') : 0;
+						
+						DEBUG_PRINTF("machine_position_1");
+						
                         machine_position[selected_extruder]= compensated_machine_position[selected_extruder]= e;
                         actuators[selected_extruder]->change_last_milestone(get_e_scale_fnc ? e*get_e_scale_fnc() : e);
                     }
@@ -617,6 +625,7 @@ void Robot::on_gcode_received(void *argument)
                         char axis= 'A'+i-3;
                         float ap= gcode->get_value(axis);
                         if((!actuators[i]->is_extruder() || ap == 0) && gcode->has_letter(axis)) {
+							DEBUG_PRINTF("machine_position_2");
                             machine_position[i]= compensated_machine_position[i]= ap;
                             actuators[i]->change_last_milestone(ap); // this updates the last_milestone in the actuator
                         }
@@ -1092,6 +1101,7 @@ void Robot::process_move(Gcode *gcode, enum MOTION_MODE_T motion_mode)
 
     if(moved) {
         // set machine_position to the calculated target
+		DEBUG_PRINTF("machine_position_3");
         memcpy(machine_position, target, n_motors*sizeof(float));
     }
 }
@@ -1111,6 +1121,7 @@ void Robot::reset_axis_position(float x, float y, float z)
 
     if(compensationTransform) {
         // apply inverse transform to get machine_position
+		DEBUG_PRINTF("machine_position_4");
         compensationTransform(machine_position, true);
     }
 
@@ -1131,6 +1142,7 @@ void Robot::reset_axis_position(float position, int axis)
 #if MAX_ROBOT_ACTUATORS > 3
     }else if(axis < n_motors) {
         // ABC and/or extruders need to be set as there is no arm solution for them
+		DEBUG_PRINTF("machine_position_5");
         machine_position[axis]= compensated_machine_position[axis]= position;
         actuators[axis]->change_last_milestone(machine_position[axis]);
 #endif
@@ -1159,12 +1171,17 @@ void Robot::reset_position_from_current_actuator_position()
         actuator_pos[i] = actuators[i]->get_current_position();
     }
 
+	DEBUG_PRINTF("machine_position_6");
     // discover machine position from where actuators actually are
     arm_solution->actuator_to_cartesian(actuator_pos, compensated_machine_position);
     memcpy(machine_position, compensated_machine_position, sizeof machine_position);
 
     // compensated_machine_position includes the compensation transform so we need to get the inverse to get actual machine_position
-    if(compensationTransform) compensationTransform(machine_position, true); // get inverse compensation transform
+    if(compensationTransform) 
+	{
+		DEBUG_PRINTF("machine_position_7");
+		compensationTransform(machine_position, true); // get inverse compensation transform
+	}
 
     // now reset actuator::machine_position, NOTE this may lose a little precision as FK is not always entirely accurate.
     // NOTE This is required to sync the machine position with the actuator position, we do a somewhat redundant cartesian_to_actuator() call
@@ -1180,6 +1197,8 @@ void Robot::reset_position_from_current_actuator_position()
         // ABC and/or extruders just need to set machine_position and compensated_machine_position
         float ap= actuator_pos[i];
         if(actuators[i]->is_extruder() && get_e_scale_fnc) ap /= get_e_scale_fnc(); // inverse E scale if there is one and this is an extruder
+		
+		DEBUG_PRINTF("machine_position_8");
         machine_position[i]= compensated_machine_position[i]= ap;
         actuators[i]->change_last_milestone(actuator_pos[i]); // this updates the last_milestone in the actuator
     }
@@ -1195,6 +1214,8 @@ bool Robot::append_milestone(const float target[], float rate_mm_s)
     float transformed_target[n_motors]; // adjust target for bed compensation
     float unit_vec[N_PRIMARY_AXIS];
 
+	DEBUG_PRINTF("append_milestone\n");
+	
     // unity transform by default
     memcpy(transformed_target, target, n_motors*sizeof(float));
 
@@ -1397,6 +1418,7 @@ bool Robot::delta_move(const float *delta, float rate_mm_s, uint8_t naxis)
     is_g123= false; // we don't want the laser to fire
     // submit for planning and if moved update machine_position
     if(append_milestone(target, rate_mm_s)) {
+		DEBUG_PRINTF("machine_position_9");
          memcpy(machine_position, target, n_motors*sizeof(float));
          return true;
     }

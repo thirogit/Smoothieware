@@ -23,6 +23,8 @@
 #include "Gcode.h"
 #include "PwmOut.h" // mbed.h lib
 #include "PublicDataRequest.h"
+#include "modules/robot/Conveyor.h"
+#include "wait_api.h"
 
 #include <algorithm>
 
@@ -49,14 +51,14 @@ Laser::Laser()
 
 void Laser::on_module_loaded()
 {
-    if( !THEKERNEL->config->value( laser_module_enable_checksum )->by_default(false)->as_bool() ) {
+    /*if( !THEKERNEL->config->value( laser_module_enable_checksum )->by_default(false)->as_bool() ) {
         // as not needed free up resource
         delete this;
         return;
-    }
+    }*/
 
     // Get smoothie-style pin from config
-    Pin* dummy_pin = new Pin();
+    /*Pin* dummy_pin = new Pin();
     dummy_pin->from_string(THEKERNEL->config->value(laser_module_pin_checksum)->by_default("nc")->as_string())->as_output();
 
     // Alternative less ambiguous name for pwm_pin
@@ -77,7 +79,7 @@ void Laser::on_module_loaded()
 
     delete dummy_pin;
     dummy_pin = NULL;
-
+*/
     // TTL settings
     this->ttl_pin = new Pin();
     ttl_pin->from_string( THEKERNEL->config->value(laser_module_ttl_pin_checksum)->by_default("nc" )->as_string())->as_output();
@@ -92,7 +94,7 @@ void Laser::on_module_loaded()
 
 
     uint32_t period = THEKERNEL->config->value(laser_module_pwm_period_checksum)->by_default(20)->as_number();
-    this->pwm_pin->period_us(period);
+   /* this->pwm_pin->period_us(period);
     this->pwm_pin->write(this->pwm_inverting ? 1 : 0);
     this->laser_maximum_power = THEKERNEL->config->value(laser_module_maximum_power_checksum)->by_default(1.0f)->as_number() ;
 
@@ -104,7 +106,7 @@ void Laser::on_module_loaded()
 
     // S value that represents maximum (default 1)
     this->laser_maximum_s_value = THEKERNEL->config->value(laser_module_maximum_s_value_checksum)->by_default(1.0f)->as_number() ;
-
+*/
     set_laser_power(0);
 
     //register for events
@@ -120,9 +122,11 @@ void Laser::on_module_loaded()
 
 void Laser::on_console_line_received( void *argument )
 {
+    SerialMessage *msgp = static_cast<SerialMessage *>(argument);
+	//msgp->stream->printf("laser module console line received");
+	
     if(THEKERNEL->is_halted()) return; // if in halted state ignore any commands
 
-    SerialMessage *msgp = static_cast<SerialMessage *>(argument);
     string possible_command = msgp->message;
 
     // ignore anything that is not lowercase or a letter
@@ -173,6 +177,8 @@ void Laser::on_console_line_received( void *argument )
         p = p / 100.0F;
         manual_fire = set_laser_power(p);
     }
+	
+	
 }
 
 // returns instance
@@ -278,12 +284,12 @@ bool Laser::set_laser_power(float power)
     power = confine(power, 0.0F, 1.0F);
 
     if(power > 0.00001F) {
-        this->pwm_pin->write(this->pwm_inverting ? 1 - power : power);
+        //this->pwm_pin->write(this->pwm_inverting ? 1 - power : power);
         if(!laser_on && this->ttl_used) this->ttl_pin->set(true);
         laser_on = true;
 
     } else {
-        this->pwm_pin->write(this->pwm_inverting ? 1 : 0);
+        //this->pwm_pin->write(this->pwm_inverting ? 1 : 0);
         if (this->ttl_used) this->ttl_pin->set(false);
         laser_on = false;
     }
@@ -301,6 +307,7 @@ void Laser::on_halt(void *argument)
 
 float Laser::get_current_power() const
 {
-    float p = pwm_pin->read();
-    return (this->pwm_inverting ? 1 - p : p) * 100;
+    //float p = pwm_pin->read();
+    //return (this->pwm_inverting ? 1 - p : p) * 100;
+	return 99.99;
 }

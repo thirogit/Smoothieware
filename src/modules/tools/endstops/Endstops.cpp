@@ -1244,3 +1244,17 @@ void Endstops::on_set_public_data(void* argument)
         if(!isnan(t[2])) homing_axis[2].home_offset= t[2];
     }
 }
+
+
+void Endstops::on_console_line_received( void *argument )
+{
+	SerialMessage new_message = *static_cast<SerialMessage *>(argument);
+    string possible_command = new_message.message;
+
+	string cmd = shift_parameter(possible_command);
+
+	if (cmd == "homex0y0") {
+		home_xy();
+		THEROBOT->reset_axis_position(0.0,0.0,0.0);
+	}		
+}

@@ -18,6 +18,7 @@
 #include "modules/tools/switch/SwitchPool.h"
 #include "modules/tools/temperatureswitch/TemperatureSwitch.h"
 #include "modules/tools/drillingcycles/Drillingcycles.h"
+#include "modules/tools/tagprinter/TagPrinter.h"
 #include "FilamentDetector.h"
 #include "MotorDriverControl.h"
 
@@ -189,6 +190,10 @@ void init() {
     #ifndef NO_UTILS_MOTORDRIVERCONTROL
     kernel->add_module( new MotorDriverControl(0) );
     #endif
+	
+	kernel->add_module( new TagPrinter() );
+	
+	
     // Create and initialize USB stuff
     u.init();
 

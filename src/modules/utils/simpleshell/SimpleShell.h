@@ -14,6 +14,7 @@
 using std::string;
 
 class StreamOutput;
+class Pin;
 
 class SimpleShell : public Module
 {
@@ -29,9 +30,14 @@ public:
     static void version_command(string parameters, StreamOutput *stream );
 
 private:
-
+	Pin *ttl_pin;
+	
     void jog(string params, StreamOutput *stream);
-
+	void move_to(StreamOutput* stream,float x,float y);
+	void delta_move(StreamOutput* stream,float dx,float dy);
+	void burn_dot(StreamOutput* stream);
+	bool is_on(int row,int col);
+	void print_pos(StreamOutput* stream);
     static void ls_command(string parameters, StreamOutput *stream );
     static void cd_command(string parameters, StreamOutput *stream );
     static void delete_file_command(string parameters, StreamOutput *stream );

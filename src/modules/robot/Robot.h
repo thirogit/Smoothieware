@@ -95,6 +95,7 @@ class Robot : public Module {
             uint8_t plane_axis_1:2;
             uint8_t plane_axis_2:2;
         };
+		 bool append_milestone(const float target[], float rate_mm_s);
 
     private:
         enum MOTION_MODE_T {
@@ -106,7 +107,6 @@ class Robot : public Module {
         };
 
         void load_config();
-        bool append_milestone(const float target[], float rate_mm_s);
         bool append_line( Gcode* gcode, const float target[], float rate_mm_s, float delta_e);
         bool append_arc( Gcode* gcode, const float target[], const float offset[], float radius, bool is_clockwise );
         bool compute_arc(Gcode* gcode, const float offset[], const float target[], enum MOTION_MODE_T motion_mode);

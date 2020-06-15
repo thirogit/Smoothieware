@@ -29,7 +29,10 @@
 #include "StepperMotor.h"
 #include "Configurator.h"
 #include "Block.h"
-
+#include "Pin.h"
+#include "Config.h"
+#include "checksumm.h"
+#include "ConfigValue.h"
 #include "TemperatureControlPublicAccess.h"
 #include "EndstopsPublicAccess.h"
 #include "NetworkPublicAccess.h"
@@ -58,6 +61,9 @@ extern "C" uint32_t  __end__;
 extern "C" uint32_t  __malloc_free_list;
 extern "C" uint32_t  _sbrk(int size);
 
+const float RESOLUTION = 0.2;
+
+#define laser_module_ttl_pin_checksum           CHECKSUM("laser_module_ttl_pin")
 
 // command lookup table
 const SimpleShell::ptentry_t SimpleShell::commands_table[] = {
@@ -157,6 +163,11 @@ void SimpleShell::on_module_loaded()
     this->register_for_event(ON_SECOND_TICK);
 
     reset_delay_secs = 0;
+	
+	this->ttl_pin = new Pin();
+    this->ttl_pin->from_string( THEKERNEL->config->value(laser_module_ttl_pin_checksum)->by_default("nc" )->as_string())->as_output();
+    this->ttl_pin->set(false);
+    
 }
 
 void SimpleShell::on_second_tick(void *)
@@ -199,6 +210,82 @@ bool SimpleShell::parse_command(const char *cmd, string args, StreamOutput *stre
     return false;
 }
 
+
+void SimpleShell::move_to(StreamOutput* stream,float x,float y)
+{
+	float position[3] {0.0, 0.0, 0.0}; 
+			
+			
+	float cur_pos[3] = {-1.0,-1.0,-1.0};
+	//THEROBOT->get_current_machine_position(cur_pos);
+	
+	
+	//stream->printf("goto(%f,%f), current xyz(%f,%f,%f): ", x,y,cur_pos[0],cur_pos[1],cur_pos[2]);
+			
+	position[0] = RESOLUTION*x;
+	position[1] = RESOLUTION*y;
+	bool b = THEROBOT->append_milestone(position, 5000.0);
+	THECONVEYOR->wait_for_idle();
+	
+	cur_pos[0] = -1;
+	cur_pos[1] = -1;
+	cur_pos[2] = -1;
+	//THEROBOT->get_current_machine_position(cur_pos);	
+	//stream->printf("result = %d,after goto xyz(%f,%f,%f)\n", b,cur_pos[0],cur_pos[1],cur_pos[2]);
+	
+}
+
+void SimpleShell::delta_move(StreamOutput* stream,float dx,float dy)
+{
+	float delta[3] {0.0, 0.0, 0.0}; 
+			
+	delta[0] = RESOLUTION*dx;
+	delta[1] = RESOLUTION*dy;
+	
+	float cur_pos[3] = {-1.0,-1.0,-1.0};
+	//THEROBOT->get_current_machine_position(cur_pos);	
+	//stream->printf("delta(%f,%f), current xyz(%f,%f,%f), ", delta[0],delta[1],cur_pos[0],cur_pos[1],cur_pos[2]);
+	
+	
+	bool b = THEROBOT->delta_move(delta, 100.0, 2);
+	THECONVEYOR->wait_for_idle();
+	
+	cur_pos[0] = -1;
+	cur_pos[1] = -1;
+	cur_pos[2] = -1;
+	//THEROBOT->get_current_machine_position(cur_pos);	
+	//stream->printf("result = %d,after delta xyz(%f,%f,%f)\n", b,cur_pos[0],cur_pos[1],cur_pos[2]);
+	
+}
+
+void SimpleShell::burn_dot(StreamOutput* stream)
+{
+	//float pos[3] = {-1.0,-1.0,-1.0};
+	//THEROBOT->get_current_machine_position(pos);
+	//stream->printf("dot@(%f,%f,%f)\n",pos[0],pos[1],pos[2]);
+	
+	this->ttl_pin->set(true);
+    wait_ms(8);
+	this->ttl_pin->set(false);
+}
+
+bool SimpleShell::is_on(int row,int col)
+{
+	uint8_t const * const imgrow = img2print[row];
+	int byte_col = col/8;
+	int bit_col = col % 8;
+	
+	return (imgrow[byte_col] & 1 << bit_col) != 0;
+	
+}
+
+void SimpleShell::print_pos(StreamOutput* stream)
+{
+	float pos[3] = {-1.0,-1.0,-1.0};
+	//THEROBOT->get_current_machine_position(pos);
+	//stream->printf("xyz(%f,%f,%f)\n",pos[0],pos[1],pos[2]);
+}
+
 // When a new line is received, check if it is a command, and if it is, act upon it
 void SimpleShell::on_console_line_received( void *argument )
 {
@@ -210,63 +297,7 @@ void SimpleShell::on_console_line_received( void *argument )
         return;
     }
 
-    // it is a grbl compatible command
-    if(possible_command[0] == '$' && possible_command.size() >= 2) {
-        switch(possible_command[1]) {
-            case 'G':
-                // issue get state
-                get_command("state", new_message.stream);
-                new_message.stream->printf("ok\n");
-                break;
-
-            case 'I':
-                // issue get state for smoopi
-                get_command("state", new_message.stream);
-                break;
-
-            case 'X':
-                if(THEKERNEL->is_halted()) {
-                    THEKERNEL->call_event(ON_HALT, (void *)1); // clears on_halt
-                    new_message.stream->printf("[Caution: Unlocked]\nok\n");
-                }
-                break;
-
-            case '#':
-                grblDP_command("", new_message.stream);
-                new_message.stream->printf("ok\n");
-                break;
-
-            case 'H':
-                if(THEKERNEL->is_halted()) THEKERNEL->call_event(ON_HALT, (void *)1); // clears on_halt
-                if(THEKERNEL->is_grbl_mode()) {
-                    // issue G28.2 which is force homing cycle
-                    Gcode gcode("G28.2", new_message.stream);
-                    THEKERNEL->call_event(ON_GCODE_RECEIVED, &gcode);
-                }else{
-                    Gcode gcode("G28", new_message.stream);
-                    THEKERNEL->call_event(ON_GCODE_RECEIVED, &gcode);
-                }
-                new_message.stream->printf("ok\n");
-                break;
-
-            case 'S':
-                switch_command(possible_command, new_message.stream);
-                break;
-
-            case 'J':
-                // instant jog command
-                jog(possible_command, new_message.stream);
-                break;
-
-            default:
-                new_message.stream->printf("error:Invalid statement\n");
-                break;
-        }
-
-    }else{
-
-        //new_message.stream->printf("Received %s\r\n", possible_command.c_str());
-        string cmd = shift_parameter(possible_command);
+	string cmd = shift_parameter(possible_command);
 
         // Configurator commands
         if (cmd == "config-get"){
@@ -275,20 +306,109 @@ void SimpleShell::on_console_line_received( void *argument )
         } else if (cmd == "config-set"){
             THEKERNEL->configurator->config_set_command(  possible_command, new_message.stream );
 
-        } else if (cmd == "config-load"){
-            THEKERNEL->configurator->config_load_command(  possible_command, new_message.stream );
-
         } else if (cmd == "play" || cmd == "progress" || cmd == "abort" || cmd == "suspend" || cmd == "resume") {
             // these are handled by Player module
 
         } else if (cmd == "fire") {
+		} else if (cmd == "goto")
+		{
+			 string xstr = shift_parameter(possible_command);
+			 string ystr = shift_parameter(possible_command);
+			if(xstr.empty() || ystr.empty()) {
+				new_message.stream->printf("Usage: goto x y\n");
+				return;
+			}
+			
+			
+			float x = strtof(xstr.c_str(), NULL);
+			float y = strtof(ystr.c_str(), NULL);
+				
+			move_to(new_message.stream,x,y);				
+			
+		}
+		else if(cmd == "home") {
+			
+		}
+		else if( cmd == "burn") {
             // these are handled by Laser module
+						
+			THEROBOT->reset_axis_position(0.0,0.0,0.0);
+			
+			int NROWS = MAX_NROWS;
+			int NCOLS = MAX_NCOLS*8;
+			
+			for (int row = 0; row < NROWS; row++)
+			{
+				
+				new_message.stream->printf("printing row forward - %d\n", row);
+				
+				int col = 0;
 
-        } else if (cmd.substr(0, 2) == "ok") {
-            // probably an echo so ignore the whole line
-            //new_message.stream->printf("ok\n");
+				//while(col < NCOLS && img2print[col] != 0) col += 8;
+				while (col < NCOLS && !is_on(row, col)) col++;
+				if (col >= NCOLS) //empty line
+					continue;
 
-        }else if(!parse_command(cmd.c_str(), possible_command, new_message.stream)) {
+				do
+				{
+					while (col < NCOLS && !is_on(row, col)) col++;
+
+					if (col >= NCOLS) continue;
+
+					move_to(new_message.stream,col, row);
+					burn_dot(new_message.stream);
+					col++;
+					while (col < NCOLS && is_on(row, col))
+					{	
+						move_to(new_message.stream,col, row);
+						//delta_move(new_message.stream,1, 0);						
+						burn_dot(new_message.stream);
+						col++;
+					}
+				} while (col < NCOLS);
+
+				print_pos(new_message.stream);
+				
+				row++;
+				if (row < NROWS)
+				{
+					new_message.stream->printf("printing row backwards - %d\n", row);
+					//print_pos(new_message.stream);
+					col = NCOLS - 1;
+
+					while (col >= 0 && !is_on(row, col)) col--;
+					if (col < 0) //empty line
+						continue;
+
+					do
+					{
+						while (col >= 0 && !is_on(row, col)) col--;
+						move_to(new_message.stream,col, row);				
+						burn_dot(new_message.stream);	
+						col--;
+						
+						while (col >= 0 && is_on(row, col))
+						{
+							//delta_move(new_message.stream,-1, 0);
+							move_to(new_message.stream,col, row);				
+							burn_dot(new_message.stream);									
+							col--;
+						}
+					} while (col > 0);
+					
+					print_pos(new_message.stream);
+
+				}
+
+				
+			}
+
+		
+				
+				
+	
+		}
+        else if(!parse_command(cmd.c_str(), possible_command, new_message.stream)) {
             new_message.stream->printf("error:Unsupported command - %s\n", cmd.c_str());
         }
     }
@@ -646,19 +766,13 @@ void SimpleShell::version_command( string parameters, StreamOutput *stream)
     uint32_t dev = getDeviceType();
     const char *mcu = (dev & 0x00100000) ? "LPC1769" : "LPC1768";
     stream->printf("Build version: %s, Build date: %s, MCU: %s, System Clock: %ldMHz\r\n", vers.get_build(), vers.get_build_date(), mcu, SystemCoreClock / 1000000);
-    #ifdef CNC
-    stream->printf("  CNC Build ");
-    #endif
-    #ifdef DISABLEMSD
-    stream->printf("  NOMSD Build\r\n");
-    #endif
     stream->printf("%d axis\n", MAX_ROBOT_ACTUATORS);
-    if(!(dev & 0x00100000)) {
+/*    if(!(dev & 0x00100000)) {
         stream->printf("WARNING: This is not a sanctioned board and may be unreliable and even dangerous.\nThis MCU is deprecated, and cannot guarantee proper function\n");
         THEKERNEL->set_bad_mcu(true);
     }else{
         THEKERNEL->set_bad_mcu(false);
-    }
+    }*/
 }
 
 // Reset the system
